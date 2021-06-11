@@ -1,9 +1,16 @@
+import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_archive/flutter_archive.dart';
 import 'package:flutter_easyloading/flutter_easyloading.dart';
 import 'package:http_parser/http_parser.dart';
+
 import 'package:multi_image_picker/multi_image_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:rounded_loading_button/rounded_loading_button.dart';
 
 import 'const/uri.dart';
 import 'model/db.dart';
@@ -22,6 +29,8 @@ class UploadScreen extends StatefulWidget {
 class _UploadScreenState extends State<UploadScreen> {
   int tramiteId;
   _UploadScreenState(this.tramiteId);
+  final RoundedLoadingButtonController _btnController =
+      RoundedLoadingButtonController();
 
   List<Asset> images = [];
   User user = new User();
@@ -84,37 +93,127 @@ class _UploadScreenState extends State<UploadScreen> {
     });
   }
 
+  final _appDataDir = Directory.systemTemp;
+  static const _dataFilesBaseDirectoryName = "store";
+
+  File _createZipFile(String fileName) {
+    final zipFilePath = "${_appDataDir.path}/$fileName";
+    final zipFile = File(zipFilePath);
+
+    if (zipFile.existsSync()) {
+      print("Deleting existing zip file: ${zipFile.path}");
+      zipFile.deleteSync();
+    }
+    return zipFile;
+  }
+
+  Future<File> createZip({bool includeBaseDirectory}) async {
+    print("_appDataDir=${_appDataDir.path}");
+    final storeDir =
+        Directory("${_appDataDir.path}${"/$_dataFilesBaseDirectoryName"}");
+
+    final zipFile = _createZipFile("testZip.zip");
+    print("Writing to zip file: ${zipFile.path}");
+
+    final files = <File>[];
+    for (var i = 0; i < images.length; i++) {
+      final file = new File("${storeDir.path}/${images[i].name}");
+      ByteData byteData = await images[i].getByteData();
+      file.createSync(recursive: true);
+      final buffer = byteData.buffer;
+      file.writeAsBytes(
+          buffer.asUint8List(byteData.offsetInBytes, byteData.lengthInBytes));
+      files.add(file);
+    }
+
+    try {
+      await ZipFile.createFromFiles(
+          sourceDir: storeDir,
+          zipFile: zipFile,
+          files: files,
+          includeBaseDirectory: includeBaseDirectory);
+    } on PlatformException catch (e) {
+      print(e);
+    }
+    return zipFile;
+  }
+
+  bool containImages() => images != null && images.length > 0;
+
   savaImages() async {
+    print("object");
     if (images != null) {
       if (images.length > 0) {
-        int count = 0;
-        for (var i = 0; i < images.length; i++) {
-          count++;
-          EasyLoading.show(status: 'Subiendo $count de ${images.length}...');
-          ByteData byteData = await images[i].getByteData();
-          List<int> imgData = byteData.buffer.asUint8List();
+        EasyLoading.show(status: 'Comprimiendo ${images.length} imagenes');
 
-          MultipartFile file = MultipartFile.fromBytes(imgData,
-              filename: images[i].name, contentType: MediaType('image', 'jpg'));
+        var myzip = await createZip(includeBaseDirectory: false);
 
-          FormData formData = FormData.fromMap({
-            "file": file,
-          });
+        var url = getUploadFiles(tramiteId, user.username);
+        dio.options.headers["authorization"] = "Bearer ${user.token}";
 
-          var url = getUploadFiles(tramiteId, user.username);
-          dio.options.headers["authorization"] = "Bearer ${user.token}";
+        var date = DateTime.now();
+
+        String filename =
+            "$tramiteId-${date.year}${date.month}${date.day}${date.hour}${date.minute}${date.second}.zip";
+
+        MultipartFile file = await MultipartFile.fromFile(myzip.path,
+            filename: filename,
+            contentType: MediaType('application/octet-stream', 'zip'));
+
+        FormData formData = FormData.fromMap({
+          "file": file,
+        });
+
+        EasyLoading.show(status: 'Enviando archivos...');
+
+        EasyLoading.dismiss();
+
+        try {
           var resp = await dio.post(url, data: formData);
-
           if (resp.statusCode == 200) {
             print(resp.data);
+            EasyLoading.showSuccess("Archivo enviado correctamente",
+                duration: Duration(seconds: 2));
+            EasyLoading.dismiss();
           } else {
             EasyLoading.dismiss();
           }
+        } catch (e) {
+          EasyLoading.showError("Error al enviar imagenes");
+          EasyLoading.dismiss();
         }
-        EasyLoading.dismiss();
-        EasyLoading.showSuccess('$count imagenes adjuntas');
+
+        // for (var i = 0; i < images.length; i++) {
+        //   count++;
+        //   EasyLoading.show(
+        //       status: 'Comprimiendo $count de ${images.length}...');
+
+        //   ByteData byteData = await images[i].getByteData();
+        //   List<int> imgData = byteData.buffer.asUint8List();
+
+        //   // MultipartFile file = MultipartFile.fromBytes(imgData,
+        //   //     filename: images[i].name,
+        //   //     contentType: MediaType('image', 'jpg'));
+
+        //   // FormData formData = FormData.fromMap({
+        //   //   "file": file,
+        //   // });
+
+        //   // var url = getUploadFiles(tramiteId, user.username);
+        //   // dio.options.headers["authorization"] = "Bearer ${user.token}";
+
+        //   // var resp = await dio.post(url, data: formData);
+        //   // if (resp.statusCode == 200) {
+        //   //   print(resp.data);
+        //   // } else {
+        //   //   EasyLoading.dismiss();
+        //   // }
+        // }
+        // EasyLoading.dismiss();
+        // EasyLoading.showSuccess('$count imagenes adjuntas');
       }
     }
+    _btnController.reset();
   }
 
   @override
@@ -126,13 +225,28 @@ class _UploadScreenState extends State<UploadScreen> {
       body: Column(
         children: [
           Expanded(child: buildGridView()),
-          RaisedButton(
-            padding: EdgeInsets.symmetric(horizontal: 25, vertical: 5),
+          RoundedLoadingButton(
+            width: 200,
+            //child: Text('Tap me!', style: TextStyle(color: Colors.white)),
+            child: Padding(
+                padding: EdgeInsets.all(5),
+                child: Column(
+                  children: [
+                    Text("Subir imagenes",
+                        style: TextStyle(color: Colors.white)),
+                    Icon(Icons.file_upload, color: Colors.white)
+                  ],
+                )),
+            controller: _btnController,
             onPressed: savaImages,
-            child: Column(
-              children: [Text("Subir imagenes"), Icon(Icons.file_upload)],
-            ),
-          )
+          ),
+          // RaisedButton(
+          //   padding: EdgeInsets.symmetric(horizontal: 25, vertical: 5),
+          //   onPressed: !sending ? savaImages : () => 0,
+          //   child: Column(
+          //     children: [Text("Subir imagenes"), Icon(Icons.file_upload)],
+          //   ),
+          // )
         ],
       ),
       floatingActionButton: new FloatingActionButton(

@@ -214,17 +214,17 @@ class _UserProfileState extends State<UserProfile> {
                         ],
                       )),
                 )),
-            Container(
-              padding:
-                  EdgeInsets.only(left: 20, right: 20, top: 10, bottom: 10),
-              width: double.infinity,
-              height: 70,
-              child: MaterialButton(
-                child: Text("Regresar"),
-                color: Colors.green,
-                onPressed: () {},
-              ),
-            )
+            // Container(
+            //   padding:
+            //       EdgeInsets.only(left: 20, right: 20, top: 10, bottom: 10),
+            //   width: double.infinity,
+            //   height: 70,
+            //   child: MaterialButton(
+            //     child: Text("Regresar"),
+            //     color: Colors.green,
+            //     onPressed: () {},
+            //   ),
+            // )
           ],
         ));
   }

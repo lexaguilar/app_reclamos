@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:app_reclamos/changepass.dart';
 import 'package:app_reclamos/nuevo.dart';
 import 'package:app_reclamos/tramites.dart';
 import 'package:app_reclamos/userProfile.dart';
@@ -147,7 +148,15 @@ class _MyHomePageState extends State<MyHomePage> {
             trailing: Icon(Icons.person),
             onTap: () {
               Navigator.push(context,
-                  MaterialPageRoute(builder: (context) => UserProfile()));
+                  MaterialPageRoute(builder: (context) => new UserProfile()));
+            },
+          ),
+          new ListTile(
+            title: Text("Cambiar contraseña"),
+            trailing: Icon(Icons.https),
+            onTap: () {
+              Navigator.push(context,
+                  MaterialPageRoute(builder: (context) => new ChangePass()));
             },
           ),
           new ListTile(
